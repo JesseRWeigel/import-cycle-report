@@ -125,6 +125,13 @@ function collectUses(ts, sf) {
       return;
     }
     if (ts.isPropertySignature(node) || ts.isMethodSignature(node)) return;
+    if (ts.isVariableDeclaration(node)) {
+      // `const b = require('./b')` declares b, it does not read it. Counting the declared name as
+      // a use made every plain require look like a module time read of its own target.
+      if (node.name && !ts.isIdentifier(node.name)) visit(node.name, evalNow);
+      visit(node.initializer, evalNow);
+      return;
+    }
     if (ts.isBindingElement(node)) {
       if (node.propertyName && ts.isComputedPropertyName(node.propertyName)) {
         visit(node.propertyName, evalNow);
