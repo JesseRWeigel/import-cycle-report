@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en" data-ready="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Import cycles in the demo project</title>
+<style>
+:root{
+  --bg:#fbfbfa; --fg:#1b1b19; --muted:#6b6b64; --line:#e0dfd8; --card:#ffffff;
+  --breaks:#b3261e; --fragile:#9a6700; --lazy:#1f6feb; --types:#6b6b64;
+  --breaks-bg:#fdecea; --fragile-bg:#fdf5e0; --lazy-bg:#e9f1fe; --types-bg:#f1f1ee;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#15161a; --fg:#e8e8e4; --muted:#9a9a92; --line:#2c2e34; --card:#1c1e23;
+    --breaks:#ff8a80; --fragile:#e3b341; --lazy:#79b8ff; --types:#9a9a92;
+    --breaks-bg:#2a1a19; --fragile-bg:#292214; --lazy-bg:#16212f; --types-bg:#232428;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:24px 18px 80px}
+h1{font-size:1.45rem;margin:0 0 4px;letter-spacing:-0.01em}
+h2{font-size:1.02rem;margin:34px 0 10px;letter-spacing:-0.01em}
+.sub{color:var(--muted);font-size:.9rem;margin:0 0 22px}
+.sub code{font-family:var(--mono);font-size:.85em;overflow-wrap:anywhere}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;margin:0 0 8px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:11px 13px;min-width:0}
+.tile .n{font-size:1.5rem;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile .k{color:var(--muted);font-size:.76rem;text-transform:uppercase;letter-spacing:.05em;
+  margin-top:3px;overflow-wrap:anywhere}
+.tile.breaks .n{color:var(--breaks)} .tile.fragile .n{color:var(--fragile)}
+.tile.lazy .n{color:var(--lazy)} .tile.types .n{color:var(--types)}
+.note{border:1px solid var(--line);border-left:3px solid var(--muted);background:var(--card);
+  border-radius:0 8px 8px 0;padding:11px 14px;margin:14px 0;font-size:.88rem;color:var(--fg)}
+.note.warn{border-left-color:var(--fragile)}
+.note h3{margin:0 0 6px;font-size:.86rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.note ul{margin:6px 0 0;padding-left:18px}
+.note li{margin:3px 0;overflow-wrap:anywhere}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:16px 0 14px;
+  position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2;border-bottom:1px solid var(--line)}
+button.filter{font:inherit;font-size:.82rem;padding:5px 11px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--line);background:var(--card);color:var(--muted)}
+button.filter[aria-pressed="true"]{color:var(--fg);border-color:currentColor;font-weight:600}
+button.filter[aria-pressed="true"][data-sev="breaks"]{color:var(--breaks);background:var(--breaks-bg)}
+button.filter[aria-pressed="true"][data-sev="fragile"]{color:var(--fragile);background:var(--fragile-bg)}
+button.filter[aria-pressed="true"][data-sev="lazy"]{color:var(--lazy);background:var(--lazy-bg)}
+button.filter[aria-pressed="true"][data-sev="types"]{color:var(--types);background:var(--types-bg)}
+input[type=search]{font:inherit;font-size:.85rem;padding:5px 10px;border-radius:7px;
+  border:1px solid var(--line);background:var(--card);color:var(--fg);flex:1 1 150px;min-width:0}
+.count{color:var(--muted);font-size:.82rem;flex:0 0 auto}
+.cycle{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:0 0 11px;
+  overflow:hidden}
+.cycle>summary{cursor:pointer;padding:12px 14px;list-style:none;display:block}
+.cycle>summary::-webkit-details-marker{display:none}
+.cycle>summary:focus-visible{outline:2px solid var(--lazy);outline-offset:-2px}
+.head{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+.pill{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.breaks{color:var(--breaks);background:var(--breaks-bg)}
+.pill.fragile{color:var(--fragile);background:var(--fragile-bg)}
+.pill.lazy{color:var(--lazy);background:var(--lazy-bg)}
+.pill.types{color:var(--types);background:var(--types-bg)}
+.title{font-family:var(--mono);font-size:.85rem;overflow-wrap:anywhere;min-width:0}
+.why{color:var(--muted);font-size:.85rem;margin:7px 0 0}
+.body{border-top:1px solid var(--line);padding:13px 14px}
+.chain{list-style:none;margin:0 0 4px;padding:0}
+.chain li{padding:7px 0;border-bottom:1px dashed var(--line)}
+.chain li:last-child{border-bottom:none}
+.arrow{font-family:var(--mono);font-size:.82rem;overflow-wrap:anywhere}
+.arrow .to{font-weight:650}
+.meta{color:var(--muted);font-size:.78rem;margin-top:2px;overflow-wrap:anywhere}
+.tag{font-family:var(--mono);font-size:.72rem;border:1px solid var(--line);border-radius:5px;
+  padding:0 5px;margin-right:5px;white-space:nowrap;display:inline-block}
+.tag.rt{color:var(--breaks)} .tag.df{color:var(--lazy)} .tag.er{color:var(--types)}
+pre{margin:5px 0 0;padding:7px 9px;background:var(--bg);border:1px solid var(--line);
+  border-radius:6px;overflow-x:auto;font-family:var(--mono);font-size:.78rem}
+.fix{margin-top:12px;padding:11px 13px;border-radius:8px;background:var(--bg);border:1px solid var(--line)}
+.fix h4{margin:0 0 6px;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.fix ul{margin:0;padding-left:17px}
+.fix li{margin:5px 0;font-size:.85rem;overflow-wrap:anywhere}
+.method{color:var(--muted);font-size:.77rem;margin-top:7px}
+.empty{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:26px 18px;
+  text-align:center;color:var(--muted)}
+footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--line);
+  color:var(--muted);font-size:.79rem}
+footer p{margin:6px 0}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>Import cycles in the demo project</h1>
+  <p class="sub">15 Python files, 9 TypeScript or JavaScript files, 24 modules inside the tree,
+    19 resolved import edges (14 run at import time, 2 deferred,
+    3 erased by the compiler). 3 imports pointed outside the tree
+    and were ignored. Built by <code>import-cycle-report 0.1.0</code>.</p>
+
+  <div class="tiles">
+    <div class="tile "><div class="n">24</div><div class="k">modules</div></div>
+    <div class="tile "><div class="n">19</div><div class="k">import edges</div></div>
+    <div class="tile breaks"><div class="n">2</div><div class="k">break at runtime</div></div>
+    <div class="tile fragile"><div class="n">2</div><div class="k">fragile</div></div>
+    <div class="tile lazy"><div class="n">2</div><div class="k">deferred</div></div>
+    <div class="tile types"><div class="n">2</div><div class="k">types only</div></div>
+  </div>
+
+  <div class="note">
+    <h3>how these are ranked</h3>
+    <ul>
+      <li><strong>breaks at runtime</strong>: runs at import time and needs a name that is not there yet</li>
+      <li><strong>fragile</strong>: runs at import time, works today, one top level use away from failing</li>
+      <li><strong>deferred</strong>: closes only through an import that runs later, so it never bites</li>
+      <li><strong>types only</strong>: closes only through imports the compiler erases</li>
+    </ul>
+  </div>
+  <div class="note warn"><h3>the graph is incomplete</h3><p>2 imports could not be resolved because the target is computed at runtime. Any cycle through these is invisible to this report.</p><ul><li><code>plugins/loader.py</code> line 7: import target is computed at runtime, so it cannot be resolved<br><code>importlib.import_module(BUILTIN)</code></li><li><code>plugins/loader.py</code> line 12: import target is computed at runtime, so it cannot be resolved<br><code>importlib.import_module(f&quot;plugins.{name}&quot;)</code></li></ul></div>
+  
+
+  <h2>Cycles</h2>
+  <div class="bar">
+    <button class="filter" type="button" data-sev="breaks" aria-pressed="true">breaks at runtime (2)</button>
+    <button class="filter" type="button" data-sev="fragile" aria-pressed="true">fragile (2)</button>
+    <button class="filter" type="button" data-sev="lazy" aria-pressed="true">deferred (2)</button>
+    <button class="filter" type="button" data-sev="types" aria-pressed="true">types only (2)</button>
+    <input type="search" id="q" placeholder="filter by module name" aria-label="filter by module name">
+    <button class="filter" type="button" id="expand" aria-pressed="false">expand all</button>
+    <span class="count" id="shown"></span>
+  </div>
+  <div id="cycles"></div>
+  <div class="empty" id="nomatch" hidden>Nothing matches that filter.</div>
+  
+
+  <footer>
+    <p><strong>What "remove these edges" means.</strong> Finding the smallest set of imports whose
+      removal breaks a cycle is the minimum feedback arc set problem, which is NP-hard. Cycles small
+      enough to search exhaustively get a proven minimum and say so. Larger ones get the Eades, Lin
+      and Smyth GR heuristic, reduced so that no edge in the answer is redundant, and say that too.</p>
+    <p><strong>What this can miss.</strong> Imports whose target is computed at runtime are listed
+      above rather than guessed at. Name resolution is per file and does not consult tsconfig path
+      aliases or Python namespace packages installed elsewhere. Both make the graph smaller than
+      reality, never larger, so a cycle reported here is real and a clean report is not a proof.</p>
+    <p>This file has no external requests in it. It works from a file:// URL with the network off.</p>
+  </footer>
+</div>
+<script type="application/json" id="report-data">{"tool":{"name":"import-cycle-report","version":"0.1.0"},"label":"the demo project","languages":{"python":15,"typescript":9},"totals":{"modules":24,"edges":19,"importTimeEdges":14,"deferredEdges":2,"erasedEdges":3,"externalImportsIgnored":3,"parentPackageEdgesSuppressed":7,"cycles":8,"modulesInCycles":16},"bySeverity":{"breaks":2,"fragile":2,"lazy":2,"types":2},"complete":false,"unresolved":[{"file":"plugins/loader.py","language":"python","line":7,"reason":"import target is computed at runtime, so it cannot be resolved","text":"importlib.import_module(BUILTIN)"},{"file":"plugins/loader.py","language":"python","line":12,"reason":"import target is computed at runtime, so it cannot be resolved","text":"importlib.import_module(f\"plugins.{name}\")"}],"parseErrors":[],"cycles":[{"id":1,"severity":"breaks","nodes":["api/__init__.py","api/routes.py"],"structuralSize":2,"edges":[{"from":"api/__init__.py","to":"api/routes.py","kind":"from-name","timing":"import-time","needsBinding":false,"orderSafe":false,"executes":true,"names":["router"],"line":4,"language":"python","conditional":false,"detail":"pulls router out of its own submodule, which Python imports fresh at this point","text":"from api.routes import router"},{"from":"api/routes.py","to":"api/__init__.py","kind":"from-name","timing":"import-time","needsBinding":true,"orderSafe":false,"executes":false,"names":["VERSION"],"line":1,"language":"python","conditional":false,"detail":"needs the name VERSION to already exist in api","text":"from api import VERSION"}],"why":"2 modules import each other in a loop, and `api/routes.py` line 1 needs a name from a module that may still be part way through loading. Whether it raises depends on which module gets imported first, so this is the one to look at.","notes":[],"break":{"method":"exact-exhaustive","proven":true,"searched":1,"arcs":[{"from":"api/__init__.py","to":"api/routes.py","statements":[{"line":4,"kind":"from-name","timing":"import-time","text":"from api.routes import router","detail":"pulls router out of its own submodule, which Python imports fresh at this point"}],"advice":"move this import inside the function that uses it, or import the module and reach for the name later"}]}},{"id":2,"severity":"breaks","nodes":["web/reducer.ts","web/state.ts"],"structuralSize":2,"edges":[{"from":"web/reducer.ts","to":"web/state.ts","kind":"import","timing":"import-time","needsBinding":false,"orderSafe":false,"executes":true,"names":[],"line":1,"language":"typescript","conditional":false,"detail":"the imported bindings are only read inside functions, so the live binding is filled in by then","text":"import { EMPTY } from './state';"},{"from":"web/state.ts","to":"web/reducer.ts","kind":"import","timing":"import-time","needsBinding":true,"orderSafe":false,"executes":true,"names":["applyPatch"],"line":1,"language":"typescript","conditional":false,"detail":"applyPatch is read while this module's body runs","text":"import { applyPatch } from './reducer';"}],"why":"2 modules import each other in a loop, and `web/state.ts` line 1 needs a name from a module that may still be part way through loading. Whether it raises depends on which module gets imported first, so this is the one to look at.","notes":[],"break":{"method":"exact-exhaustive","proven":true,"searched":1,"arcs":[{"from":"web/reducer.ts","to":"web/state.ts","statements":[{"line":1,"kind":"import","timing":"import-time","text":"import { EMPTY } from './state';","detail":"the imported bindings are only read inside functions, so the live binding is filled in by then"}],"advice":"the module object itself is fine; the risk is the use at module level, so move that use into a function"}]}},{"id":3,"severity":"fragile","nodes":["domain/customer.py","domain/order.py"],"structuralSize":2,"edges":[{"from":"domain/customer.py","to":"domain/order.py","kind":"import","timing":"import-time","needsBinding":false,"orderSafe":false,"executes":true,"names":null,"line":1,"language":"python","conditional":false,"detail":"binds the module object, which exists before the module body finishes","text":"import domain.order"},{"from":"domain/order.py","to":"domain/customer.py","kind":"import","timing":"import-time","needsBinding":false,"orderSafe":false,"executes":true,"names":null,"line":1,"language":"python","conditional":false,"detail":"binds the module object, which exists before the module body finishes","text":"import domain.customer"}],"why":"2 modules import each other in a loop at import time, and it runs today because nothing reads a name across the loop. One top level use in the wrong place turns it into a hard failure.","notes":[],"break":{"method":"exact-exhaustive","proven":true,"searched":1,"arcs":[{"from":"domain/customer.py","to":"domain/order.py","statements":[{"line":1,"kind":"import","timing":"import-time","text":"import domain.order","detail":"binds the module object, which exists before the module body finishes"}],"advice":"the module object itself is fine; the risk is the use at module level, so move that use into a function"}]}},{"id":4,"severity":"fragile","nodes":["web/index.ts","web/widget.ts"],"structuralSize":2,"edges":[{"from":"web/index.ts","to":"web/widget.ts","kind":"re-export","timing":"import-time","needsBinding":false,"orderSafe":false,"executes":true,"names":null,"line":1,"language":"typescript","conditional":false,"detail":"re-exported ESM bindings stay live, so the value is read at use time, not here","text":"export { Widget } from './widget';"},{"from":"web/widget.ts","to":"web/index.ts","kind":"import","timing":"import-time","needsBinding":false,"orderSafe":false,"executes":true,"names":[],"line":1,"language":"typescript","conditional":false,"detail":"the imported bindings are only read inside functions, so the live binding is filled in by then","text":"import { formatLabel } from './index';"}],"why":"2 modules import each other in a loop at import time, and it runs today because nothing reads a name across the loop. One top level use in the wrong place turns it into a hard failure.","notes":[],"break":{"method":"exact-exhaustive","proven":true,"searched":1,"arcs":[{"from":"web/index.ts","to":"web/widget.ts","statements":[{"line":1,"kind":"re-export","timing":"import-time","text":"export { Widget } from './widget';","detail":"re-exported ESM bindings stay live, so the value is read at use time, not here"}],"advice":"a barrel file re-exporting into a cycle is usually the easiest edge to delete: import from the real module instead"}]}},{"id":5,"severity":"lazy","nodes":["reporting/render.py","reporting/summary.py"],"structuralSize":2,"edges":[{"from":"reporting/render.py","to":"reporting/summary.py","kind":"from-name","timing":"deferred","needsBinding":true,"orderSafe":false,"executes":true,"names":["summarize"],"line":5,"language":"python","conditional":false,"detail":"needs the name summarize to already exist in reporting.summary","text":"from reporting.summary import summarize"},{"from":"reporting/summary.py","to":"reporting/render.py","kind":"from-name","timing":"import-time","needsBinding":true,"orderSafe":false,"executes":true,"names":["HEADER"],"line":1,"language":"python","conditional":false,"detail":"needs the name HEADER to already exist in reporting.render","text":"from reporting.render import HEADER"}],"why":"2 modules import each other in a loop, but the loop only closes through an import that runs later, so module evaluation never goes round it.","notes":[],"break":{"method":"exact-exhaustive","proven":true,"searched":1,"arcs":[{"from":"reporting/render.py","to":"reporting/summary.py","statements":[{"line":5,"kind":"from-name","timing":"deferred","text":"from reporting.summary import summarize","detail":"needs the name summarize to already exist in reporting.summary"}],"advice":"move this import inside the function that uses it, or import the module and reach for the name later"}]}},{"id":6,"severity":"lazy","nodes":["web/charts/bars.ts","web/charts/panel.ts"],"structuralSize":2,"edges":[{"from":"web/charts/bars.ts","to":"web/charts/panel.ts","kind":"import","timing":"import-time","needsBinding":false,"orderSafe":false,"executes":true,"names":[],"line":1,"language":"typescript","conditional":false,"detail":"the imported bindings are only read inside functions, so the live binding is filled in by then","text":"import { PANEL_ID } from './panel';"},{"from":"web/charts/panel.ts","to":"web/charts/bars.ts","kind":"dynamic-import","timing":"deferred","needsBinding":false,"orderSafe":false,"executes":true,"names":null,"line":4,"language":"typescript","conditional":false,"detail":"import() returns a promise and runs after the current module has finished","text":"import('./bars')"}],"why":"2 modules import each other in a loop, but the loop only closes through an import that runs later, so module evaluation never goes round it.","notes":[],"break":{"method":"exact-exhaustive","proven":true,"searched":1,"arcs":[{"from":"web/charts/bars.ts","to":"web/charts/panel.ts","statements":[{"line":1,"kind":"import","timing":"import-time","text":"import { PANEL_ID } from './panel';","detail":"the imported bindings are only read inside functions, so the live binding is filled in by then"}],"advice":"the module object itself is fine; the risk is the use at module level, so move that use into a function"}]}},{"id":7,"severity":"types","nodes":["catalog/model.py","catalog/view.py"],"structuralSize":2,"edges":[{"from":"catalog/model.py","to":"catalog/view.py","kind":"from-name","timing":"erased","needsBinding":true,"orderSafe":false,"executes":true,"names":["ProductView"],"line":6,"language":"python","conditional":false,"detail":"needs the name ProductView to already exist in catalog.view","text":"from catalog.view import ProductView"},{"from":"catalog/view.py","to":"catalog/model.py","kind":"from-name","timing":"import-time","needsBinding":true,"orderSafe":false,"executes":true,"names":["Product"],"line":1,"language":"python","conditional":false,"detail":"needs the name Product to already exist in catalog.model","text":"from catalog.model import Product"}],"why":"2 modules import each other in a loop only through imports the compiler erases. There is no cycle in the emitted code.","notes":[],"break":{"method":"exact-exhaustive","proven":true,"searched":1,"arcs":[{"from":"catalog/model.py","to":"catalog/view.py","statements":[{"line":6,"kind":"from-name","timing":"erased","text":"from catalog.view import ProductView","detail":"needs the name ProductView to already exist in catalog.view"}],"advice":"move this import inside the function that uses it, or import the module and reach for the name later"}]}},{"id":8,"severity":"types","nodes":["web/types/invoice.ts","web/types/order.ts"],"structuralSize":2,"edges":[{"from":"web/types/invoice.ts","to":"web/types/order.ts","kind":"elided","timing":"erased","needsBinding":false,"orderSafe":false,"executes":true,"names":null,"line":1,"language":"typescript","conditional":false,"detail":"Order is never used as a value, so tsc elides this import. Set verbatimModuleSyntax to keep it, and this edge becomes real.","text":"import { Order } from './order';"},{"from":"web/types/order.ts","to":"web/types/invoice.ts","kind":"import-type","timing":"erased","needsBinding":false,"orderSafe":false,"executes":true,"names":null,"line":1,"language":"typescript","conditional":false,"detail":"`import type` is removed by the compiler and emits no JavaScript","text":"import type { Invoice } from './invoice';"}],"why":"2 modules import each other in a loop only through imports the compiler erases. There is no cycle in the emitted code.","notes":[],"break":{"method":"exact-exhaustive","proven":true,"searched":1,"arcs":[{"from":"web/types/invoice.ts","to":"web/types/order.ts","statements":[{"line":1,"kind":"elided","timing":"erased","text":"import { Order } from './order';","detail":"Order is never used as a value, so tsc elides this import. Set verbatimModuleSyntax to keep it, and this edge becomes real."}],"advice":"defer this import, or invert the dependency so the arrow points the other way"}]}}]}</script>
+<script>
+(function () {
+  var el = document.getElementById('report-data');
+  if (!el) return;
+  var data = JSON.parse(el.textContent);
+  var SEV = {"breaks":{"label":"breaks at runtime","short":"breaks","blurb":"runs at import time and needs a name that is not there yet"},"fragile":{"label":"fragile","short":"fragile","blurb":"runs at import time, works today, one top level use away from failing"},"lazy":{"label":"deferred","short":"deferred","blurb":"closes only through an import that runs later, so it never bites"},"types":{"label":"types only","short":"types","blurb":"closes only through imports the compiler erases"}};
+  var active = { breaks: true, fragile: true, lazy: true, types: true };
+  var query = '';
+
+  function h(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function timingTag(t) {
+    var m = { 'import-time': ['rt', 'import time'], deferred: ['df', 'deferred'], erased: ['er', 'erased'] };
+    var v = m[t] || ['', t];
+    return h('span', 'tag ' + v[0], v[1]);
+  }
+
+  function renderCycle(c) {
+    var d = h('details', 'cycle');
+    d.dataset.sev = c.severity;
+    d.dataset.text = (c.nodes.join(' ') + ' ' + c.why).toLowerCase();
+    var s = h('summary');
+    var head = h('div', 'head');
+    head.appendChild(h('span', 'pill ' + c.severity, SEV[c.severity].short));
+    head.appendChild(h('span', 'title', c.nodes.join('  \u2192  ') + (c.nodes.length > 1 ? '  \u21ba' : '  (self)')));
+    s.appendChild(head);
+    s.appendChild(h('p', 'why', c.why));
+    d.appendChild(s);
+
+    var body = h('div', 'body');
+    var ul = h('ul', 'chain');
+    c.edges.forEach(function (e) {
+      var li = document.createElement('li');
+      var a = h('div', 'arrow');
+      a.appendChild(document.createTextNode(e.from + ' \u2192 '));
+      a.appendChild(h('span', 'to', e.to));
+      a.appendChild(document.createTextNode('  line ' + e.line));
+      li.appendChild(a);
+      var meta = h('div', 'meta');
+      meta.appendChild(timingTag(e.timing));
+      meta.appendChild(h('span', 'tag', e.kind));
+      if (e.needsBinding) meta.appendChild(h('span', 'tag rt', 'needs a name now'));
+      if (e.conditional) meta.appendChild(h('span', 'tag', 'conditional'));
+      meta.appendChild(document.createTextNode(e.detail || ''));
+      li.appendChild(meta);
+      if (e.text) li.appendChild(h('pre', null, e.text));
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+
+    var fix = h('div', 'fix');
+    fix.appendChild(h('h4', null, c.break.arcs.length === 1
+      ? 'remove 1 edge to break this cycle'
+      : 'remove ' + c.break.arcs.length + ' edges to break this cycle'));
+    var fl = document.createElement('ul');
+    c.break.arcs.forEach(function (arc) {
+      var li = document.createElement('li');
+      li.appendChild(h('strong', null, arc.from + ' \u2192 ' + arc.to));
+      li.appendChild(document.createTextNode(' at line ' + arc.statements.map(function (s) { return s.line; }).join(', ') + '. ' + arc.advice));
+      fl.appendChild(li);
+    });
+    fix.appendChild(fl);
+    fix.appendChild(h('p', 'method', c.break.proven
+      ? 'This is a true minimum: every smaller set of edges was tried and none of them breaks the cycle (' + c.break.searched + ' subsets tested).'
+      : 'Minimum feedback arc set is NP-hard, so this is the Eades, Lin and Smyth GR heuristic with redundant edges removed. No smaller subset of THIS set works, but a smaller set elsewhere in the component might.'));
+    body.appendChild(fix);
+
+    if (c.structuralSize > c.nodes.length) {
+      body.appendChild(h('p', 'method', 'These ' + c.nodes.length + ' modules sit inside a wider ' + c.structuralSize + ' module component once deferred and type only imports are counted.'));
+    }
+    d.appendChild(body);
+    return d;
+  }
+
+  var list = document.getElementById('cycles');
+  var nodes = data.cycles.map(renderCycle);
+  nodes.forEach(function (n) { list.appendChild(n); });
+
+  var counter = document.getElementById('shown');
+  function apply() {
+    var shown = 0;
+    nodes.forEach(function (n) {
+      var ok = active[n.dataset.sev] && (query === '' || n.dataset.text.indexOf(query) !== -1);
+      n.hidden = !ok;
+      if (ok) shown += 1;
+    });
+    counter.textContent = shown + ' of ' + nodes.length + ' shown';
+    var none = document.getElementById('nomatch');
+    none.hidden = shown !== 0 || nodes.length === 0;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('button.filter'), function (b) {
+    b.addEventListener('click', function () {
+      var sev = b.dataset.sev;
+      active[sev] = !active[sev];
+      b.setAttribute('aria-pressed', String(active[sev]));
+      apply();
+    });
+  });
+  var search = document.getElementById('q');
+  search.addEventListener('input', function () {
+    query = search.value.trim().toLowerCase();
+    apply();
+  });
+  document.getElementById('expand').addEventListener('click', function () {
+    var anyClosed = nodes.some(function (n) { return !n.hidden && !n.open; });
+    nodes.forEach(function (n) { if (!n.hidden) n.open = anyClosed; });
+  });
+  apply();
+  document.documentElement.dataset.ready = '1';
+})();
+</script>
+</body>
+</html>
