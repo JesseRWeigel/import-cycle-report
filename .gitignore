@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*credentials*
+*secret*
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+.next/
+
+cycles.html
+*.report.json

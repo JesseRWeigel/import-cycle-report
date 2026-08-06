@@ -1,0 +1,125 @@
+{
+  "note": "Abstract graphs with hand checked answers. `components` lists only the strongly connected components that are cycles: more than one member, or one member with an edge to itself. `minFas` is the size of the smallest set of arcs whose removal makes the whole graph acyclic, worked out by hand. The DAG entries are the negative controls: a detector that reports a cycle in any of them is broken in the way that matters most, because a tool that finds cycles everywhere passes every test that only checks it found the planted one.",
+  "graphs": [
+    {
+      "name": "empty",
+      "why": "no nodes at all",
+      "nodes": [],
+      "edges": [],
+      "components": [],
+      "minFas": 0
+    },
+    {
+      "name": "single-node",
+      "why": "one node, no edges, so it is trivially its own component and not a cycle",
+      "nodes": ["a"],
+      "edges": [],
+      "components": [],
+      "minFas": 0
+    },
+    {
+      "name": "dag-line",
+      "why": "negative control: a straight chain",
+      "nodes": ["a", "b", "c", "d"],
+      "edges": [["a", "b"], ["b", "c"], ["c", "d"]],
+      "components": [],
+      "minFas": 0
+    },
+    {
+      "name": "dag-diamond",
+      "why": "negative control: two paths that rejoin, which a careless reachability check calls a cycle",
+      "nodes": ["top", "left", "right", "bottom"],
+      "edges": [["top", "left"], ["top", "right"], ["left", "bottom"], ["right", "bottom"]],
+      "components": [],
+      "minFas": 0
+    },
+    {
+      "name": "dag-wide",
+      "why": "negative control: 8 nodes, 12 edges, no cycle anywhere",
+      "nodes": ["a", "b", "c", "d", "e", "f", "g", "h"],
+      "edges": [["a", "b"], ["a", "c"], ["b", "d"], ["c", "d"], ["d", "e"], ["d", "f"], ["e", "g"], ["f", "g"], ["g", "h"], ["a", "h"], ["b", "e"], ["c", "f"]],
+      "components": [],
+      "minFas": 0
+    },
+    {
+      "name": "self-loop",
+      "why": "a module that imports itself is a cycle of length one",
+      "nodes": ["a", "b"],
+      "edges": [["a", "a"], ["a", "b"]],
+      "components": [["a"]],
+      "minFas": 1
+    },
+    {
+      "name": "two-cycle",
+      "why": "the simplest real cycle",
+      "nodes": ["a", "b"],
+      "edges": [["a", "b"], ["b", "a"]],
+      "components": [["a", "b"]],
+      "minFas": 1
+    },
+    {
+      "name": "triangle",
+      "why": "the case a DFS back edge check reports differently depending on where the walk starts",
+      "nodes": ["a", "b", "c"],
+      "edges": [["a", "b"], ["b", "c"], ["c", "a"]],
+      "components": [["a", "b", "c"]],
+      "minFas": 1
+    },
+    {
+      "name": "triangle-with-tails",
+      "why": "the same triangle with acyclic nodes hanging off it, which must not join the component",
+      "nodes": ["in", "a", "b", "c", "out"],
+      "edges": [["in", "a"], ["a", "b"], ["b", "c"], ["c", "a"], ["c", "out"]],
+      "components": [["a", "b", "c"]],
+      "minFas": 1
+    },
+    {
+      "name": "two-disjoint-cycles",
+      "why": "two components, not one",
+      "nodes": ["a", "b", "c", "d"],
+      "edges": [["a", "b"], ["b", "a"], ["c", "d"], ["d", "c"]],
+      "components": [["a", "b"], ["c", "d"]],
+      "minFas": 2
+    },
+    {
+      "name": "figure-eight",
+      "why": "two triangles sharing one node are ONE strongly connected component of five, not two of three",
+      "nodes": ["hub", "a", "b", "c", "d"],
+      "edges": [["hub", "a"], ["a", "b"], ["b", "hub"], ["hub", "c"], ["c", "d"], ["d", "hub"]],
+      "components": [["a", "b", "c", "d", "hub"]],
+      "minFas": 2
+    },
+    {
+      "name": "shared-arc",
+      "why": "two cycles through the same arc: the minimum is one edge, and a per-cycle greedy answer says two",
+      "nodes": ["a", "b", "c", "d"],
+      "edges": [["a", "b"], ["b", "c"], ["c", "a"], ["b", "d"], ["d", "a"]],
+      "components": [["a", "b", "c", "d"]],
+      "minFas": 1
+    },
+    {
+      "name": "complete-4",
+      "why": "every ordered pair, so every 2-cycle has to lose an arc: six of them",
+      "nodes": ["a", "b", "c", "d"],
+      "edges": [["a", "b"], ["b", "a"], ["a", "c"], ["c", "a"], ["a", "d"], ["d", "a"], ["b", "c"], ["c", "b"], ["b", "d"], ["d", "b"], ["c", "d"], ["d", "c"]],
+      "components": [["a", "b", "c", "d"]],
+      "minFas": 6
+    },
+    {
+      "name": "long-chain-then-cycle",
+      "why": "a deep acyclic prefix, which is what breaks a recursive Tarjan on a real tree",
+      "nodes": ["n0", "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "x", "y", "z"],
+      "edges": [["n0", "n1"], ["n1", "n2"], ["n2", "n3"], ["n3", "n4"], ["n4", "n5"], ["n5", "n6"], ["n6", "n7"], ["n7", "n8"], ["n8", "n9"], ["n9", "x"], ["x", "y"], ["y", "z"], ["z", "x"]],
+      "components": [["x", "y", "z"]],
+      "minFas": 1
+    },
+    {
+      "name": "nested-and-separate",
+      "why": "a five node component and a two node component in the same graph, plus a DAG tail",
+      "nodes": ["a", "b", "c", "d", "e", "p", "q", "t1", "t2"],
+      "edges": [["a", "b"], ["b", "c"], ["c", "d"], ["d", "e"], ["e", "a"], ["c", "a"], ["p", "q"], ["q", "p"], ["e", "p"], ["q", "t1"], ["t1", "t2"]],
+      "components": [["a", "b", "c", "d", "e"], ["p", "q"]],
+      "minFas": 2
+    }
+  ]
+}
