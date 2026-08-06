@@ -1,5 +1,5 @@
 {
-  "note": "Ground truth for the fixture source trees, written by hand before the tool was run against them. Each tree states the cycles the tool must report and, separately, what the language runtime actually does when you import the tree. The two are checked independently: the tool can be right about the graph and wrong about the danger, and a tool that calls a working cycle dangerous is the reason people turn these checks off. py-clean and ts-clean are the negative controls. py-pkg-ordered is a known false positive, pinned here on purpose so it cannot become a surprise.",
+  "note": "Ground truth for the fixture source trees, written by hand before the tool was run against them. Each tree states the cycles the tool must report and, separately, what the language runtime actually does when you import the tree. The two are checked independently: the tool can be right about the graph and wrong about the danger, and a tool that calls a working cycle dangerous is the reason people turn these checks off. py-clean and ts-clean are the negative controls. py-pkg and py-pkg-ordered are the same code in two line orders, and only one of them raises; ts-fragile and ts-hoisted are the JavaScript version of the same question.",
   "trees": [
     {
       "dir": "py-clean",
@@ -7,64 +7,174 @@
       "lang": "py",
       "cycles": [],
       "unresolved": 0,
-      "runtime": { "argv": ["python3", "app.py"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "python3",
+          "app.py"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "py-breaks",
       "why": "from-import both ways, which raises ImportError on a partly initialised module",
       "lang": "py",
-      "cycles": [{ "severity": "breaks", "nodes": ["alpha.py", "beta.py"] }],
+      "cycles": [
+        {
+          "severity": "breaks",
+          "nodes": [
+            "alpha.py",
+            "beta.py"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["python3", "-c", "import alpha"], "expect": "throws", "match": "ImportError" }
+      "runtime": {
+        "argv": [
+          "python3",
+          "-c",
+          "import alpha"
+        ],
+        "expect": "throws",
+        "match": "ImportError"
+      }
     },
     {
       "dir": "py-fragile",
       "why": "plain `import` both ways binds module objects, so it runs, and one top level use would end that",
       "lang": "py",
-      "cycles": [{ "severity": "fragile", "nodes": ["alpha.py", "beta.py"] }],
+      "cycles": [
+        {
+          "severity": "fragile",
+          "nodes": [
+            "alpha.py",
+            "beta.py"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["python3", "-c", "import alpha"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "python3",
+          "-c",
+          "import alpha"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "py-lazy",
       "why": "the loop closes through an import inside a function, so module evaluation never goes round it",
       "lang": "py",
-      "cycles": [{ "severity": "lazy", "nodes": ["alpha.py", "beta.py"] }],
+      "cycles": [
+        {
+          "severity": "lazy",
+          "nodes": [
+            "alpha.py",
+            "beta.py"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["python3", "-c", "import alpha"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "python3",
+          "-c",
+          "import alpha"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "py-typing",
       "why": "the loop closes only through `if TYPE_CHECKING`, which never executes",
       "lang": "py",
-      "cycles": [{ "severity": "types", "nodes": ["alpha.py", "beta.py"] }],
+      "cycles": [
+        {
+          "severity": "types",
+          "nodes": [
+            "alpha.py",
+            "beta.py"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["python3", "-c", "import beta"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "python3",
+          "-c",
+          "import beta"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "py-pkg",
       "why": "a package __init__ and its submodule importing each other, the most common real Python cycle",
       "lang": "py",
-      "cycles": [{ "severity": "breaks", "nodes": ["pkgx/__init__.py", "pkgx/leaf.py"] }],
+      "cycles": [
+        {
+          "severity": "breaks",
+          "nodes": [
+            "pkgx/__init__.py",
+            "pkgx/leaf.py"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["python3", "entry.py"], "expect": "throws", "match": "ImportError" }
+      "runtime": {
+        "argv": [
+          "python3",
+          "entry.py"
+        ],
+        "expect": "throws",
+        "match": "ImportError"
+      }
     },
     {
       "dir": "py-pkg-ordered",
-      "why": "KNOWN FALSE POSITIVE. The same shape as py-pkg, but the name is assigned before the import that needs it, so it runs. Nothing static can see that without evaluating the module, so the tool calls it breaks and this file records that it is wrong here.",
+      "why": "the same shape as py-pkg with the assignment moved above the import, so the name is already bound when the submodule asks for it and nothing raises",
       "lang": "py",
-      "cycles": [{ "severity": "breaks", "nodes": ["pkgy/__init__.py", "pkgy/leaf.py"] }],
+      "cycles": [
+        {
+          "severity": "fragile",
+          "nodes": [
+            "pkgy/__init__.py",
+            "pkgy/leaf.py"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["python3", "entry.py"], "expect": "ok" },
-      "knownFalsePositive": true
+      "runtime": {
+        "argv": [
+          "python3",
+          "entry.py"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "py-dynamic",
       "why": "importlib with a literal is an edge, importlib with a variable is an admission that the graph is incomplete",
       "lang": "py",
-      "cycles": [{ "severity": "lazy", "nodes": ["alpha.py", "beta.py"] }],
+      "cycles": [
+        {
+          "severity": "lazy",
+          "nodes": [
+            "alpha.py",
+            "beta.py"
+          ]
+        }
+      ],
       "unresolved": 1,
-      "runtime": { "argv": ["python3", "-c", "import beta"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "python3",
+          "-c",
+          "import beta"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "ts-clean",
@@ -72,71 +182,207 @@
       "lang": "ts",
       "cycles": [],
       "unresolved": 0,
-      "runtime": { "argv": ["node", "app.mjs"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "node",
+          "app.mjs"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "ts-breaks",
       "why": "each module reads the other's binding while its own body runs, which is a TDZ error in ESM",
       "lang": "ts",
-      "cycles": [{ "severity": "breaks", "nodes": ["a.mjs", "b.mjs"] }],
+      "cycles": [
+        {
+          "severity": "breaks",
+          "nodes": [
+            "a.mjs",
+            "b.mjs"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["node", "entry.mjs"], "expect": "throws", "match": "before initialization" }
+      "runtime": {
+        "argv": [
+          "node",
+          "entry.mjs"
+        ],
+        "expect": "throws",
+        "match": "before initialization"
+      }
     },
     {
       "dir": "ts-fragile",
       "why": "the same cycle with every use inside a function, so the live bindings are filled in by then",
       "lang": "ts",
-      "cycles": [{ "severity": "fragile", "nodes": ["a.mjs", "b.mjs"] }],
+      "cycles": [
+        {
+          "severity": "fragile",
+          "nodes": [
+            "a.mjs",
+            "b.mjs"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["node", "entry.mjs"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "node",
+          "entry.mjs"
+        ],
+        "expect": "ok"
+      }
+    },
+    {
+      "dir": "ts-hoisted",
+      "why": "a value read across the cycle at module time that works anyway, because the export is a hoisted function declaration rather than a const",
+      "lang": "ts",
+      "cycles": [
+        {
+          "severity": "fragile",
+          "nodes": [
+            "a.mjs",
+            "b.mjs"
+          ]
+        }
+      ],
+      "unresolved": 0,
+      "runtime": {
+        "argv": [
+          "node",
+          "entry.mjs"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "ts-lazy",
       "why": "the loop closes through await import(), which runs after evaluation",
       "lang": "ts",
-      "cycles": [{ "severity": "lazy", "nodes": ["a.mjs", "b.mjs"] }],
+      "cycles": [
+        {
+          "severity": "lazy",
+          "nodes": [
+            "a.mjs",
+            "b.mjs"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["node", "entry.mjs"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "node",
+          "entry.mjs"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "ts-types",
       "why": "`import type` is erased, so there is no cycle in the emitted JavaScript",
       "lang": "ts",
-      "cycles": [{ "severity": "types", "nodes": ["a.ts", "b.ts"] }],
+      "cycles": [
+        {
+          "severity": "types",
+          "nodes": [
+            "a.ts",
+            "b.ts"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "erasure": { "file": "a.ts", "mustNotReference": "./b" }
+      "erasure": {
+        "file": "a.ts",
+        "mustNotReference": "./b"
+      }
     },
     {
       "dir": "ts-elided",
       "why": "a value-syntax import whose binding is only used as a type, which tsc removes by default",
       "lang": "ts",
-      "cycles": [{ "severity": "types", "nodes": ["a.ts", "b.ts"] }],
+      "cycles": [
+        {
+          "severity": "types",
+          "nodes": [
+            "a.ts",
+            "b.ts"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "erasure": { "file": "a.ts", "mustNotReference": "./b" }
+      "erasure": {
+        "file": "a.ts",
+        "mustNotReference": "./b"
+      }
     },
     {
       "dir": "ts-barrel",
       "why": "a re-export barrel closing a loop with its own member, which is the usual way this happens in real code",
       "lang": "ts",
-      "cycles": [{ "severity": "fragile", "nodes": ["index.mjs", "widget.mjs"] }],
+      "cycles": [
+        {
+          "severity": "fragile",
+          "nodes": [
+            "index.mjs",
+            "widget.mjs"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["node", "entry.mjs"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "node",
+          "entry.mjs"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "ts-dynamic",
       "why": "import() with a literal is a deferred edge, import() with a variable cannot be resolved at all",
       "lang": "ts",
-      "cycles": [{ "severity": "lazy", "nodes": ["a.mjs", "b.mjs"] }],
+      "cycles": [
+        {
+          "severity": "lazy",
+          "nodes": [
+            "a.mjs",
+            "b.mjs"
+          ]
+        }
+      ],
       "unresolved": 1,
-      "runtime": { "argv": ["node", "b.mjs"], "expect": "ok" }
+      "runtime": {
+        "argv": [
+          "node",
+          "b.mjs"
+        ],
+        "expect": "ok"
+      }
     },
     {
       "dir": "ts-cjs",
       "why": "destructuring a require() inside a cycle copies an empty exports object, and the call fails",
       "lang": "ts",
-      "cycles": [{ "severity": "breaks", "nodes": ["a.cjs", "b.cjs"] }],
+      "cycles": [
+        {
+          "severity": "breaks",
+          "nodes": [
+            "a.cjs",
+            "b.cjs"
+          ]
+        }
+      ],
       "unresolved": 0,
-      "runtime": { "argv": ["node", "a.cjs"], "expect": "throws", "match": "not a function" }
+      "runtime": {
+        "argv": [
+          "node",
+          "a.cjs"
+        ],
+        "expect": "throws",
+        "match": "not a function"
+      }
     }
   ]
 }

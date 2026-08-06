@@ -36,8 +36,16 @@ class Collector(ast.NodeVisitor):
         self.source = source
         self.imports = []
         self.dynamic = []
+        # Module level names, and the line each is first bound on. This is what makes it possible
+        # to tell a cycle that raises from one that only looks like it should. If `pkg/__init__.py`
+        # assigns SHARED on line 3 and imports the submodule that reads it on line 5, the name is
+        # there by the time anything can ask for it. Swap those two lines and the same package
+        # raises ImportError. Nothing about the import graph can see the difference; the line
+        # numbers can.
+        self.bindings = []
         self.func_depth = 0
         self.type_checking_depth = 0
+        self.main_guard_depth = 0
         self.conditional_depth = 0
         self.annotation_depth = 0
         self.future_annotations = False
@@ -50,9 +58,30 @@ class Collector(ast.NodeVisitor):
     def timing(self):
         if self.type_checking_depth > 0:
             return ERASED
-        if self.func_depth > 0:
+        # `if __name__ == "__main__":` runs only when this file IS the program. When anyone
+        # imports it, the block is skipped, so an import in there cannot take part in an import
+        # cycle. This is not a nicety: rich ships demo blocks like that in most of its modules,
+        # and counting them made 36 of its 78 modules come out as one strongly connected
+        # component, all of it an artefact of code that never runs on import.
+        if self.main_guard_depth > 0 or self.func_depth > 0:
             return DEFERRED
         return IMPORT_TIME
+
+    def bind(self, name, lineno):
+        if not self.in_module_body() or not name:
+            return
+        self.bindings.append(
+            {"name": name, "line": lineno, "conditional": self.conditional_depth > 0}
+        )
+
+    def bind_target(self, target):
+        if isinstance(target, ast.Name):
+            self.bind(target.id, target.lineno)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for el in target.elts:
+                self.bind_target(el)
+        elif isinstance(target, ast.Starred):
+            self.bind_target(target.value)
 
     def segment(self, node):
         try:
@@ -62,11 +91,16 @@ class Collector(ast.NodeVisitor):
         return " ".join(text.split())[:160]
 
     def in_module_body(self):
-        return self.func_depth == 0 and self.type_checking_depth == 0
+        return (
+            self.func_depth == 0
+            and self.type_checking_depth == 0
+            and self.main_guard_depth == 0
+        )
 
     # -- scopes ----------------------------------------------------------------------------
 
     def _visit_function(self, node):
+        self.bind(node.name, node.lineno)
         # Decorators, default arguments and the return annotation are evaluated where the `def`
         # sits, which for a module level function is import time. Only the body is deferred.
         for dec in node.decorator_list:
@@ -102,12 +136,34 @@ class Collector(ast.NodeVisitor):
         self.func_depth -= 1
 
     def visit_ClassDef(self, node):
+        self.bind(node.name, node.lineno)
         # A class body runs at import time, so nothing changes about depth here. The base class
         # expression in particular is evaluated immediately, which is why `class B(a.A)` after a
         # plain `import a` can fail inside a cycle while the same code inside a method cannot.
         self.generic_visit(node)
 
+    def visit_Assign(self, node):
+        for target in node.targets:
+            self.bind_target(target)
+        self.generic_visit(node)
+
+    def visit_For(self, node):
+        self.bind_target(node.target)
+        self.generic_visit(node)
+
+    visit_AsyncFor = visit_For
+
+    def visit_With(self, node):
+        for item in node.items:
+            if item.optional_vars is not None:
+                self.bind_target(item.optional_vars)
+        self.generic_visit(node)
+
+    visit_AsyncWith = visit_With
+
     def visit_AnnAssign(self, node):
+        if node.value is not None:
+            self.bind_target(node.target)
         self.visit(node.target)
         if node.annotation is not None:
             self.annotation_depth += 1
@@ -126,17 +182,35 @@ class Collector(ast.NodeVisitor):
             return True
         return False
 
+    @staticmethod
+    def _is_main_guard(test):
+        if not isinstance(test, ast.Compare) or len(test.ops) != 1:
+            return False
+        if not isinstance(test.ops[0], ast.Eq):
+            return False
+        sides = [test.left, test.comparators[0]]
+        has_name = any(isinstance(s, ast.Name) and s.id == "__name__" for s in sides)
+        has_main = any(
+            isinstance(s, ast.Constant) and s.value == "__main__" for s in sides
+        )
+        return has_name and has_main
+
     def visit_If(self, node):
         self.visit(node.test)
         guarded = self._is_type_checking(node.test)
+        main_guard = not guarded and self._is_main_guard(node.test)
         if guarded:
             self.type_checking_depth += 1
+        elif main_guard:
+            self.main_guard_depth += 1
         else:
             self.conditional_depth += 1
         for stmt in node.body:
             self.visit(stmt)
         if guarded:
             self.type_checking_depth -= 1
+        elif main_guard:
+            self.main_guard_depth -= 1
         else:
             self.conditional_depth -= 1
         self.conditional_depth += 1
@@ -156,6 +230,7 @@ class Collector(ast.NodeVisitor):
     def visit_Import(self, node):
         for alias in node.names:
             bound = alias.asname if alias.asname else alias.name.split(".")[0]
+            self.bind(bound, node.lineno)
             self.imports.append(
                 {
                     "kind": "import",
@@ -166,6 +241,7 @@ class Collector(ast.NodeVisitor):
                     "line": node.lineno,
                     "timing": self.timing(),
                     "conditional": self.conditional_depth > 0,
+                    "main_guard": self.main_guard_depth > 0,
                     "binding": bound,
                     "text": self.segment(node),
                 }
@@ -173,6 +249,9 @@ class Collector(ast.NodeVisitor):
 
     def visit_ImportFrom(self, node):
         star = any(a.name == "*" for a in node.names)
+        for a in node.names:
+            if a.name != "*":
+                self.bind(a.asname or a.name, node.lineno)
         if node.module == "__future__" and any(a.name == "annotations" for a in node.names):
             self.future_annotations = True
         self.imports.append(
@@ -187,6 +266,7 @@ class Collector(ast.NodeVisitor):
                 "line": node.lineno,
                 "timing": self.timing(),
                 "conditional": self.conditional_depth > 0,
+                "main_guard": self.main_guard_depth > 0,
                 "binding": None,
                 "text": self.segment(node),
             }
@@ -234,6 +314,7 @@ class Collector(ast.NodeVisitor):
                             "line": node.lineno,
                             "timing": self.timing(),
                             "conditional": self.conditional_depth > 0,
+                            "main_guard": self.main_guard_depth > 0,
                             "binding": None,
                             "text": self.segment(node),
                         }
@@ -259,14 +340,24 @@ def extract(path):
     try:
         raw = open(path, "rb").read()
     except OSError as exc:
-        return {"parse_error": f"could not read: {exc}", "imports": [], "dynamic": []}
+        return {
+            "parse_error": f"could not read: {exc}",
+            "imports": [],
+            "dynamic": [],
+            "bindings": [],
+        }
     try:
         source = raw.decode("utf-8")
     except UnicodeDecodeError:
         try:
             source = raw.decode("latin-1")
         except Exception as exc:  # pragma: no cover
-            return {"parse_error": f"undecodable: {exc}", "imports": [], "dynamic": []}
+            return {
+                "parse_error": f"undecodable: {exc}",
+                "imports": [],
+                "dynamic": [],
+                "bindings": [],
+            }
     try:
         tree = ast.parse(source, filename=path)
     except SyntaxError as exc:
@@ -274,6 +365,7 @@ def extract(path):
             "parse_error": f"syntax error at line {exc.lineno}: {exc.msg}",
             "imports": [],
             "dynamic": [],
+            "bindings": [],
         }
     collector = Collector(source)
     collector.visit(tree)
@@ -290,6 +382,7 @@ def extract(path):
         "parse_error": None,
         "imports": collector.imports,
         "dynamic": collector.dynamic,
+        "bindings": collector.bindings,
     }
 
 

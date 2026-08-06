@@ -176,6 +176,55 @@ function collectUses(ts, sf) {
   return { valueUses, moduleTimeUses };
 }
 
+/**
+ * Export names that are safe to read during a cycle because they are hoisted.
+ *
+ * `export function f() {}` is in scope from the first instruction of the module, so a partner
+ * module can call it while this one is still evaluating. `export const f = () => {}` is not: it
+ * sits in the temporal dead zone until its line runs, and reading it early throws. Same file,
+ * same call site, opposite outcome, and the only difference is the keyword.
+ */
+function hoistedExportNames(ts, sf) {
+  const hoisted = new Set();
+  const localHoisted = new Set();
+  const isExported = (n) =>
+    (ts.getModifiers?.(n) || []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  const isDefault = (n) =>
+    (ts.getModifiers?.(n) || []).some((m) => m.kind === ts.SyntaxKind.DefaultKeyword);
+  ts.forEachChild(sf, (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      localHoisted.add(node.name.text);
+      if (isExported(node)) hoisted.add(isDefault(node) ? 'default' : node.name.text);
+    } else if (ts.isVariableStatement(node)) {
+      const isVar =
+        (node.declarationList.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) === 0;
+      if (isVar) {
+        for (const d of node.declarationList.declarations) {
+          if (ts.isIdentifier(d.name)) {
+            localHoisted.add(d.name.text);
+            if (isExported(node)) hoisted.add(d.name.text);
+          }
+        }
+      }
+    }
+  });
+  // `export { f }` where f is a hoisted declaration above.
+  ts.forEachChild(sf, (node) => {
+    if (
+      ts.isExportDeclaration(node) &&
+      !node.moduleSpecifier &&
+      node.exportClause &&
+      ts.isNamedExports(node.exportClause)
+    ) {
+      for (const el of node.exportClause.elements) {
+        const local = (el.propertyName || el.name).text;
+        if (localHoisted.has(local)) hoisted.add(el.name.text);
+      }
+    }
+  });
+  return hoisted;
+}
+
 function bindingNames(ts, clause) {
   const names = [];
   if (!clause) return names;
@@ -199,6 +248,7 @@ export function parseFile(ts, abs, source) {
         : ts.ScriptKind.TS;
   const sf = ts.createSourceFile(abs, source, ts.ScriptTarget.Latest, true, scriptKind);
   const { valueUses, moduleTimeUses } = collectUses(ts, sf);
+  const hoisted = hoistedExportNames(ts, sf);
   const records = [];
   const dynamic = [];
   const lineOf = (node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
@@ -236,6 +286,24 @@ export function parseFile(ts, abs, source) {
           });
         } else {
           const names = bindingNames(ts, clause);
+          const nb = clause.namedBindings;
+          let moduleTimeExportNames = [];
+          if (nb && ts.isNamespaceImport(nb) && moduleTimeUses.has(nb.name.text)) {
+            // A namespace object is read as a whole, so no single export name covers it.
+            moduleTimeExportNames = null;
+          } else {
+            if (clause.name && moduleTimeUses.has(clause.name.text)) {
+              moduleTimeExportNames.push('default');
+            }
+            if (nb && ts.isNamedImports(nb)) {
+              for (const el of nb.elements) {
+                if (el.isTypeOnly) continue;
+                if (moduleTimeUses.has(el.name.text)) {
+                  moduleTimeExportNames.push((el.propertyName || el.name).text);
+                }
+              }
+            }
+          }
           const allSpecifiersTypeOnly =
             clause.namedBindings &&
             ts.isNamedImports(clause.namedBindings) &&
@@ -273,6 +341,7 @@ export function parseFile(ts, abs, source) {
               text: textOf(node),
               timing: 'import-time',
               kind: 'import',
+              names: moduleTimeExportNames,
               needsBinding: usedAtModuleTime,
               detail: usedAtModuleTime
                 ? `${names.filter((n) => moduleTimeUses.has(n)).join(', ')} is read while this module's body runs`
@@ -369,7 +438,7 @@ export function parseFile(ts, abs, source) {
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(sf, visit);
-  return { records, dynamic };
+  return { records, dynamic, hoisted: [...hoisted].sort() };
 }
 
 /**
@@ -386,6 +455,8 @@ export function typescriptGraph(root, opts = {}) {
   const edges = [];
   const unresolved = [];
   const parseErrors = [];
+  /** fileId -> export names that are hoisted, so reading them mid-cycle is safe. */
+  const hoisted = {};
   let externalCount = 0;
 
   for (const abs of absPaths) {
@@ -404,6 +475,7 @@ export function typescriptGraph(root, opts = {}) {
       parseErrors.push({ file: id, language: 'typescript', message: String(e.message).slice(0, 200) });
       continue;
     }
+    hoisted[id] = parsed.hoisted;
     for (const d of parsed.dynamic) {
       unresolved.push({ file: id, language: 'typescript', line: d.line, reason: d.reason, text: d.text });
     }
@@ -428,10 +500,11 @@ export function typescriptGraph(root, opts = {}) {
         kind: r.kind,
         needsBinding: r.needsBinding,
         conditional: false,
+        names: r.names === undefined ? null : r.names,
         detail: r.detail,
         text: r.text,
       });
     }
   }
-  return { nodes, edges, unresolved, parseErrors, externalCount };
+  return { nodes, edges, unresolved, parseErrors, externalCount, hoisted };
 }

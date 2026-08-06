@@ -32,6 +32,94 @@ export const SEVERITY_RANK = { breaks: 3, fragile: 2, lazy: 1, types: 0 };
 
 const within = (edges, set) => edges.filter((e) => set.has(e.from) && set.has(e.to));
 
+/**
+ * The earliest line in `from` whose import can reach `to` again, walking only import-time edges
+ * inside this component. That is the first moment `from` can be re-entered from the other side of
+ * the cycle, so everything `from` assigned before that line is already there when it happens.
+ */
+function reentryLine(fromNode, toNode, edges) {
+  const adj = new Map();
+  for (const e of edges) {
+    // Only edges that actually run the other module can hand control over. An import of a parent
+    // package from inside that package reads from it without ever executing it.
+    if (e.executes === false) continue;
+    if (!adj.has(e.from)) adj.set(e.from, []);
+    adj.get(e.from).push(e);
+  }
+  const reaches = (start) => {
+    const seen = new Set([start]);
+    const queue = [start];
+    while (queue.length > 0) {
+      const n = queue.shift();
+      if (n === toNode) return true;
+      for (const e of adj.get(n) || []) {
+        if (!seen.has(e.to)) {
+          seen.add(e.to);
+          queue.push(e.to);
+        }
+      }
+    }
+    return false;
+  };
+  let best = Infinity;
+  for (const e of adj.get(fromNode) || []) {
+    if (e.to === toNode || reaches(e.to)) best = Math.min(best, e.line);
+  }
+  return Number.isFinite(best) ? best : null;
+}
+
+/**
+ * Can this edge actually raise, or does the other module always have the name ready in time?
+ *
+ * An edge U -> V that needs a name out of V only ever runs in one of two situations. Either U is
+ * the outermost import, in which case V is imported fresh and finishes before the name is read,
+ * or U is reached from inside V's own execution, in which case V has run every line up to the
+ * import that led here. So if V binds all the needed names above that line, the edge is safe.
+ *
+ * This is the difference between a report people act on and a report people mute. cryptography,
+ * setuptools and jsonschema all have a package __init__ in a cycle with a submodule that reads a
+ * name back out of it, all three import perfectly well, and all three came out as "breaks at
+ * runtime" until this ran. The fixture pair py-pkg and py-pkg-ordered is the same code in two
+ * line orders, and only the first one raises.
+ *
+ * In JavaScript the equivalent is hoisting. `export function f` exists from the module's first
+ * instruction; `export const f = () => {}` does not exist until its line runs.
+ */
+function orderSafety(edge, coreEdges, bindings, hoisted) {
+  if (!edge.needsBinding) return { safe: true, why: null };
+  const names = edge.names;
+  if (!Array.isArray(names) || names.length === 0) return { safe: false, why: null };
+
+  if (edge.language === 'typescript') {
+    const h = new Set((hoisted && hoisted[edge.to]) || []);
+    if (names.every((n) => h.has(n))) {
+      return {
+        safe: true,
+        why: `${names.join(', ')} in ${edge.to} ${names.length === 1 ? 'is a hoisted function declaration' : 'are hoisted function declarations'}, so reading it partway through the cycle works`,
+      };
+    }
+    return { safe: false, why: null };
+  }
+
+  const table = (bindings && bindings[edge.to]) || null;
+  if (!table) return { safe: false, why: null };
+  const line = reentryLine(edge.to, edge.from, coreEdges);
+  if (line === null) {
+    return {
+      safe: true,
+      why: `${edge.to} never runs ${edge.from}, so it is always fully loaded by the time this line reads ${names.join(', ')} out of it`,
+    };
+  }
+  for (const n of names) {
+    const b = table[n];
+    if (!b || b.conditional || b.line >= line) return { safe: false, why: null };
+  }
+  return {
+    safe: true,
+    why: `${edge.to} binds ${names.join(', ')} before line ${line}, which is the earliest point it can hand control back to ${edge.from}`,
+  };
+}
+
 function adviceFor(arc) {
   const kinds = new Set(arc.statements.map((s) => s.kind));
   if (kinds.has('from-name') || kinds.has('from-star')) {
@@ -62,11 +150,12 @@ function describe(severity, nodes, edges) {
   const n = nodes.length;
   const what = n === 1 ? 'a module imports itself' : `${n} modules import each other in a loop`;
   if (severity === 'breaks') {
-    const culprit = edges.find((e) => e.needsBinding);
-    return `${what}, and ${culprit ? `\`${culprit.from}\` line ${culprit.line} ` : ''}needs a name from a module that is still loading. This is the shape that raises an error at import.`;
+    const culprit = edges.find((e) => e.needsBinding && !e.orderSafe);
+    return `${what}, and ${culprit ? `\`${culprit.from}\` line ${culprit.line} ` : ''}needs a name from a module that may still be part way through loading. Whether it raises depends on which module gets imported first, so this is the one to look at.`;
   }
   if (severity === 'fragile') {
-    return `${what} at import time, but nothing reads a name across the loop yet, so it runs today. One top level use of any of these imports turns it into a hard failure.`;
+    const rescued = edges.some((e) => e.orderSafe);
+    return `${what} at import time, and it runs today${rescued ? ' because every name read across the loop is already bound by the time the loop closes' : ' because nothing reads a name across the loop'}. One top level use in the wrong place turns it into a hard failure.`;
   }
   if (severity === 'lazy') {
     return `${what}, but the loop only closes through an import that runs later, so module evaluation never goes round it.`;
@@ -89,8 +178,20 @@ export function analyzeGraph(nodes, allEdges, opts = {}) {
       for (const core of cores) {
         const coreSet = new Set(core);
         const coreEdges = within(compRuntime, coreSet);
-        const severity = coreEdges.some((e) => e.needsBinding) ? 'breaks' : 'fragile';
-        cycles.push(makeCycle(severity, core, coreEdges, comp.length, opts));
+        const notes = [];
+        let hazard = false;
+        for (const e of coreEdges) {
+          if (!e.needsBinding) continue;
+          const s = orderSafety(e, coreEdges, opts.bindings, opts.hoisted);
+          if (s.safe) {
+            e.orderSafe = true;
+            if (s.why) notes.push(s.why);
+          } else {
+            hazard = true;
+          }
+        }
+        const severity = hazard ? 'breaks' : 'fragile';
+        cycles.push(makeCycle(severity, core, coreEdges, comp.length, opts, notes));
       }
       continue;
     }
@@ -99,11 +200,11 @@ export function analyzeGraph(nodes, allEdges, opts = {}) {
     if (lazyCores.length > 0) {
       for (const core of lazyCores) {
         const coreSet = new Set(core);
-        cycles.push(makeCycle('lazy', core, within(compCode, coreSet), comp.length, opts));
+        cycles.push(makeCycle('lazy', core, within(compCode, coreSet), comp.length, opts, []));
       }
       continue;
     }
-    cycles.push(makeCycle('types', comp, within(allEdges, set), comp.length, opts));
+    cycles.push(makeCycle('types', comp, within(allEdges, set), comp.length, opts, []));
   }
 
   cycles.sort(
@@ -118,7 +219,7 @@ export function analyzeGraph(nodes, allEdges, opts = {}) {
   return cycles;
 }
 
-function makeCycle(severity, nodes, edges, structuralSize, opts) {
+function makeCycle(severity, nodes, edges, structuralSize, opts, notes) {
   const fas = feedbackArcSet(nodes, edges, opts.fas);
   return {
     id: 0,
@@ -131,7 +232,10 @@ function makeCycle(severity, nodes, edges, structuralSize, opts) {
         to: e.to,
         kind: e.kind,
         timing: e.timing,
-        needsBinding: e.needsBinding,
+        needsBinding: e.needsBinding && !e.orderSafe,
+        orderSafe: Boolean(e.orderSafe),
+        executes: e.executes !== false,
+        names: Array.isArray(e.names) ? e.names : null,
         line: e.line,
         language: e.language,
         conditional: Boolean(e.conditional),
@@ -145,6 +249,7 @@ function makeCycle(severity, nodes, edges, structuralSize, opts) {
           a.line - b.line,
       ),
     why: describe(severity, nodes, edges),
+    notes,
     break: {
       method: fas.method,
       proven: fas.proven,
@@ -179,6 +284,9 @@ export function analyzeTree(root, opts = {}) {
   const unresolved = [];
   const parseErrors = [];
   let externalCount = 0;
+  let ancestorEdgesSuppressed = 0;
+  let bindings = {};
+  let hoisted = {};
   const counts = { python: 0, typescript: 0 };
 
   if (lang === 'py' || lang === 'both') {
@@ -186,6 +294,8 @@ export function analyzeTree(root, opts = {}) {
     counts.python = files.length;
     if (files.length > 0) {
       const g = pythonGraph(root, { files, ignores, python: opts.python });
+      bindings = g.bindings || {};
+      ancestorEdgesSuppressed += g.ancestorEdgesSuppressed || 0;
       parts.push(g);
       unresolved.push(...g.unresolved);
       parseErrors.push(...g.parseErrors);
@@ -197,6 +307,7 @@ export function analyzeTree(root, opts = {}) {
     counts.typescript = files.length;
     if (files.length > 0) {
       const g = typescriptGraph(root, { files, ignores, includeDeclarations: opts.includeDeclarations });
+      hoisted = g.hoisted || {};
       parts.push(g);
       unresolved.push(...g.unresolved);
       parseErrors.push(...g.parseErrors);
@@ -206,7 +317,7 @@ export function analyzeTree(root, opts = {}) {
 
   const nodes = [...new Set(parts.flatMap((p) => p.nodes))].sort();
   const edges = parts.flatMap((p) => p.edges);
-  const cycles = analyzeGraph(nodes, edges, opts);
+  const cycles = analyzeGraph(nodes, edges, { ...opts, bindings, hoisted });
 
   const byTiming = { 'import-time': 0, deferred: 0, erased: 0 };
   for (const e of edges) byTiming[e.timing] = (byTiming[e.timing] || 0) + 1;
@@ -225,6 +336,7 @@ export function analyzeTree(root, opts = {}) {
       deferredEdges: byTiming.deferred || 0,
       erasedEdges: byTiming.erased || 0,
       externalImportsIgnored: externalCount,
+      parentPackageEdgesSuppressed: ancestorEdgesSuppressed,
       cycles: cycles.length,
       modulesInCycles: new Set(cycles.flatMap((c) => c.nodes)).size,
     },
