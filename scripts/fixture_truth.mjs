@@ -48,6 +48,14 @@ if (negatives.length < 2) {
       'cycles everywhere passes a suite that only checks it found the planted ones.',
   );
 }
+// Two module cycles are the easy shape and they are also the shape a back edge check gets right
+// by accident, because there is only one way round a loop of two.
+const wide = spec.trees.filter((t) => t.cycles.some((c) => c.nodes.length > 2));
+if (wide.length < 1) {
+  fail('no fixture tree has a cycle of more than two modules, so traversal order is never tested');
+}
+
+const methodsSeen = new Set();
 
 for (const t of spec.trees) {
   const dir = join(TREES, t.dir);
@@ -71,6 +79,13 @@ for (const t of spec.trees) {
     fail(`${t.dir}: expected [${want || 'no cycles'}] got [${got || 'no cycles'}]`);
   } else {
     ok(`${t.dir}: ${want || 'no cycles, as expected'}`);
+  }
+
+  for (const c of report.cycles) {
+    methodsSeen.add(c.break.method);
+    if (c.break.method === 'heuristic-eades-lin-smyth' && c.break.proven) {
+      fail(`${t.dir}: a heuristic answer is marked proven, which claims a minimum it did not find`);
+    }
   }
 
   if (report.unresolved.length !== t.unresolved) {
@@ -132,6 +147,20 @@ for (const t of spec.trees) {
       ok(`${t.dir}: tsc really does emit no reference to ${t.erasure.mustNotReference}`);
     }
   }
+}
+
+// Both branches of the feedback arc search have to be reached by something, or half the code that
+// produces the "edges to remove" advice never runs in this suite.
+if (!methodsSeen.has('exact-exhaustive')) {
+  fail('no fixture reached the exact feedback arc search, so the proven-minimum path is untested');
+}
+if (!methodsSeen.has('heuristic-eades-lin-smyth')) {
+  fail(
+    'no fixture component is large enough to reach the Eades, Lin and Smyth heuristic, so the ' +
+      'path that must never claim a minimum is untested',
+  );
+} else {
+  ok(`both feedback arc methods were exercised: ${[...methodsSeen].sort().join(', ')}`);
 }
 
 console.log(

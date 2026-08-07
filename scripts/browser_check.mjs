@@ -15,7 +15,7 @@
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -273,5 +273,8 @@ try {
   await browser.close();
 }
 
-console.log(`${pass} passed, ${fail} failed in a real browser via ${resolvedFrom}`);
+// Reported relative to the project, never as an absolute path: this line ends up pasted into a
+// README, and the directory layout of the machine that ran it is both private and unportable.
+const via = resolvedFrom.startsWith('/') ? relative(root, resolvedFrom) || '.' : resolvedFrom;
+console.log(`${pass} passed, ${fail} failed in a real browser via ${via}`);
 process.exit(fail === 0 ? 0 : 1);

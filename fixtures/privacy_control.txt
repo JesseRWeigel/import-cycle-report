@@ -1,0 +1,5 @@
+This file exists so the privacy scan has somewhere to plant a fake credential and prove it can
+find one. scripts/privacy_scan.py appends credential shaped strings here, re-runs the whole scan
+over the tracked files, requires every planted string to be reported, and then restores this file
+to exactly these bytes. If the scan cannot find a secret it just wrote, its clean result on the
+rest of the tree means nothing.

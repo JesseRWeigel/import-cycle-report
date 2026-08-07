@@ -15,3 +15,4 @@ build/
 
 cycles.html
 *.report.json
+.verify-tmp/

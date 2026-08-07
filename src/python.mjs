@@ -297,7 +297,10 @@ export function pythonGraph(root, opts = {}) {
             kind: 'from-name',
             names: named,
             executes,
-            needsBinding: !ownSubmodule,
+            // The extractor decides whether a statement reads a name; this side decides whether
+            // the target can be half built when it does. Recomputing the first half here as well
+            // would give the field two sources of truth, and the copy nobody reads goes stale.
+            needsBinding: Boolean(imp.needs_binding) && !ownSubmodule,
             detail: ownSubmodule
               ? `pulls ${named.join(', ')} out of its own submodule, which Python imports fresh at this point`
               : `needs ${named.length === 1 ? 'the name' : 'the names'} ${named.join(', ')} to already exist in ${base}`,
@@ -311,7 +314,7 @@ export function pythonGraph(root, opts = {}) {
             kind: 'from-star',
             names: null,
             executes: !isAncestorPackage(self.pkg, base),
-            needsBinding: true,
+            needsBinding: Boolean(imp.needs_binding),
             detail: `a star import copies the whole namespace of ${base} as it stands right now`,
           });
         }

@@ -1,0 +1,68 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# The group key is the run id, deliberately, and the tradeoff runs in both directions.
+#
+# With `group: pages`, every deploy queues on one shared lock. A run that wedges holds that lock,
+# every later push waits behind it, and a wedged run cannot always be cancelled from the UI, so
+# the fix becomes an admin problem rather than a push.
+#
+# With `group: pages-${{ github.run_id }}` every run gets its own group and nothing ever queues.
+# What is given up is ordering: two pushes close together run concurrently, and whichever finishes
+# last is the version that ends up live, which may be the older commit. For a page rebuilt from
+# committed fixtures that is a temporary wrong version fixed by the next push. For anything where
+# publishing an older commit would be harmful, the shared group and its queue is the right choice.
+concurrency:
+  group: pages-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      # The page is generated, so it is rebuilt here and diffed rather than trusted. A committed
+      # docs/index.html that no longer matches what the analysis produces is a page that says
+      # something the code does not.
+      - name: rebuild the page and fail if the committed copy has drifted
+        run: |
+          node scripts/build_docs.mjs
+          git diff --exit-code -- docs/index.html
+
+      - name: unit tests
+        run: node --test test/*.test.mjs
+
+      - name: fixture trees against the real runtimes
+        run: node scripts/fixture_truth.mjs
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -177,6 +177,60 @@
       }
     },
     {
+      "dir": "py-triangle",
+      "why": "three modules, not two. A back edge check names a different pair depending on which file it opened first; the component is the same set of three whatever the order.",
+      "lang": "py",
+      "cycles": [
+        {
+          "severity": "breaks",
+          "nodes": [
+            "alpha.py",
+            "beta.py",
+            "gamma.py"
+          ]
+        }
+      ],
+      "unresolved": 0,
+      "runtime": {
+        "argv": [
+          "python3",
+          "-c",
+          "import alpha"
+        ],
+        "expect": "throws",
+        "match": "ImportError"
+      }
+    },
+    {
+      "dir": "py-tangle",
+      "why": "one component of eight modules and 24 arcs, past the exact search limit, so this is the tree that exercises the Eades, Lin and Smyth heuristic and the proven:false path",
+      "lang": "py",
+      "cycles": [
+        {
+          "severity": "fragile",
+          "nodes": [
+            "m0.py",
+            "m1.py",
+            "m2.py",
+            "m3.py",
+            "m4.py",
+            "m5.py",
+            "m6.py",
+            "m7.py"
+          ]
+        }
+      ],
+      "unresolved": 0,
+      "runtime": {
+        "argv": [
+          "python3",
+          "-c",
+          "import m0"
+        ],
+        "expect": "ok"
+      }
+    },
+    {
       "dir": "ts-clean",
       "why": "negative control, an ESM DAG",
       "lang": "ts",
