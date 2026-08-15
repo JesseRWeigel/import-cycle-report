@@ -3,6 +3,10 @@
 Find the import cycles in a Python or TypeScript tree that can actually break it, and write one
 self-contained HTML file you can open from disk or attach to an email.
 
+> Measurements described here were taken on one development machine: an RTX 5090 with
+> 32 GB of VRAM, 12 cores, 48 GB of RAM, running Linux under WSL2. Numbers from your own
+> hardware will differ.
+
 Catalog task: `DEVT-024`. One of a public catalog of build ideas:
 https://github.com/JesseRWeigel/722-things-to-build
 
@@ -423,7 +427,7 @@ privacy scan clean, and proved able to find what it looks for
 ------------------------------------------------------------------------
 this tool's own src: 7 modules, 8 edges, 0 breaking, 0 fragile, 0 deferred, 0 types-only -> .verify-tmp/self.html
   ok    analysed its own 7 module src/ tree
-  ok    no path from this machine reached the report
+  ok    no path from the development machine reached the report
 
 [PASS] 9/11 the tool run against real source
 
