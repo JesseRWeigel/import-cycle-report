@@ -3,6 +3,8 @@
 Find the import cycles in a Python or TypeScript tree that can actually break it, and write one
 self-contained HTML file you can open from disk or attach to an email.
 
+**[The cycles found in the demo project →](https://jesserweigel.github.io/import-cycle-report/)**
+
 > Measurements described here were taken on one development machine: an RTX 5090 with
 > 32 GB of VRAM, 12 cores, 48 GB of RAM, running Linux under WSL2. Numbers from your own
 > hardware will differ.
