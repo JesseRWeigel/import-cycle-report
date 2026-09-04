@@ -32,6 +32,10 @@ rm -rf "$TMP"
 mkdir -p "$TMP"
 trap 'rm -rf "$ROOT/.verify-tmp"' EXIT
 
+# The count of unit tests that actually ran, set by step 2 and read by step 11. Empty means step 2
+# did not get far enough to count, which step 11 reports rather than skipping its check.
+UNIT_TEST_COUNT=""
+
 # Keep .pyc files out of the tree so the privacy scan and the fixture trees stay as committed.
 export PYTHONDONTWRITEBYTECODE=1
 
@@ -126,7 +130,16 @@ run_unit_tests() {
     return 1
   fi
   echo "  ok    $passed tests passed, 0 failed"
-  echo "$passed" > "$TMP/test-count.txt"
+  # HANDED TO STEP 11 IN A VARIABLE, NOT THROUGH A FILE. It used to be written to
+  # $TMP/test-count.txt and read back at the end, and on 2026-09-04, during a batch that re-verified
+  # a hundred repositories at once, the file was not there when step 11 looked for it. The unit step
+  # had passed. Nothing in this script removes $TMP between them, an EXIT trap does not fire in a
+  # bash subshell, and the disk was not full. The cause was not found.
+  #
+  # It also does not matter, because the file was never needed. `step` runs each function in this
+  # shell rather than a subshell, so a variable crosses between steps with no filesystem in the way
+  # and nothing to disappear. A dependency that cannot fail beats a diagnosis.
+  UNIT_TEST_COUNT="$passed"
   return 0
 }
 
@@ -287,9 +300,8 @@ run_readme() {
   fi
   # The test count in the README is a claim like any other and goes stale the moment somebody
   # adds a test.
-  if [ -f "$TMP/test-count.txt" ]; then
-    local n
-    n="$(cat "$TMP/test-count.txt")"
+  if [ -n "$UNIT_TEST_COUNT" ]; then
+    local n="$UNIT_TEST_COUNT"
     if grep -q "$n unit tests" README.md; then
       echo "  ok    the README's test count still says $n, which is what just ran"
     else
@@ -297,7 +309,7 @@ run_readme() {
       bad=1
     fi
   else
-    echo "  FAIL  the unit test step did not produce a count, so the README claim was not checked"
+    echo "  FAIL  the unit test step did not report a count, so the README claim was not checked"
     bad=1
   fi
   return $bad
